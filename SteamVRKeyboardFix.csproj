@@ -1,0 +1,43 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <!-- Windows Service는 .NET Framework 4.7.2 또는 .NET 6+ Windows 모두 가능 -->
+    <!-- .NET Framework 4.7.2: Windows 내장 System.Management 사용 가능, 별도 NuGet 불필요 -->
+    <TargetFramework>net472</TargetFramework>
+    <OutputType>Exe</OutputType>
+    <AssemblyName>SteamVRKeyboardFix</AssemblyName>
+    <RootNamespace>SteamVRKeyboardFix</RootNamespace>
+    <Nullable>enable</Nullable>
+    <LangVersion>10</LangVersion>
+    <Platforms>x64</Platforms>
+    <PlatformTarget>x64</PlatformTarget>
+  </PropertyGroup>
+
+  <!--
+    .NET 6/8 Windows 를 사용하는 경우 아래 주석을 해제하고
+    위 <TargetFramework>net472</TargetFramework>를 교체하세요:
+
+  <PropertyGroup>
+    <TargetFramework>net8.0-windows</TargetFramework>
+    <OutputType>Exe</OutputType>
+    <UseWindowsForms>false</UseWindowsForms>
+    <SelfContained>false</SelfContained>
+    <Nullable>enable</Nullable>
+  </PropertyGroup>
+  -->
+
+  <ItemGroup>
+    <!-- .NET Framework 4.7.2: GAC에 포함, 추가 NuGet 불필요 -->
+    <Reference Include="System.Management" />
+    <Reference Include="System.ServiceProcess" />
+    <Reference Include="System.Configuration.Install" />
+  </ItemGroup>
+
+  <!--
+    .NET 6/8 Windows 사용 시 아래 NuGet 패키지 추가 필요:
+  <ItemGroup>
+    <PackageReference Include="System.Management" Version="8.0.0" />
+  </ItemGroup>
+  -->
+
+</Project>
