@@ -12,21 +12,19 @@ using Microsoft.Win32;
 namespace SteamVRKeyboardFix
 {
     /// <summary>
-    /// Windows Service that monitors for SteamVR (vrserver.exe) process creation
-    /// and automatically removes the en-US keyboard layout that SteamVR adds.
+    /// Windows Service that watches for SteamVR (vrserver.exe) startup and automatically
+    /// removes the en-US keyboard layout that SteamVR silently adds to the system.
     ///
-    /// Detection mechanism:
-    ///   - WMI extrinsic event: Win32_ProcessStartTrace
-    ///   - No WITHIN clause → no polling, kernel-level push event (CPU ≈ 0% when idle)
+    /// --- Detection mechanism ---
+    /// Uses the WMI extrinsic event class Win32_ProcessStartTrace with no WITHIN clause,
+    /// so the kernel pushes the notification directly — zero polling, zero CPU when idle.
     ///
-    /// Removal mechanism (pure C#, no PowerShell):
-    ///   Two distinct cases handled separately:
-    ///
-    ///   [Case A] Ghost layout — en-US is NOT in the registry at all, but IS present
-    ///            in the runtime HKL list returned by GetKeyboardLayoutList().
-    ///            The OS loaded it transiently (e.g. via SteamVR / LoadKeyboardLayout).
-    ///            Fix: UnloadKeyboardLayout(hkl) to evict it from the runtime list.
-    ///            No registry changes needed.
+    /// --- Removal: two distinct cases ---
+    ///   [Case A] Ghost layout
+    ///     Definition : en-US is NOT in HKCU\Keyboard Layout\Preload, but IS present
+    ///                  in the runtime HKL list returned by GetKeyboardLayoutList().
+    ///                  The OS loaded it transiently (LoadKeyboardLayout by SteamVR).
+    ///     Fix        : UnloadKeyboardLayout()(hkl) to evict it from the runtime list. — no registry changes needed.
     ///
     ///   [Case B] Registered layout — en-US IS in the registry
     ///            (HKCU\Control Panel\International\User Profile\Languages).
@@ -34,8 +32,9 @@ namespace SteamVRKeyboardFix
     ///            remove en-US from the Languages multi-string, then broadcast
     ///            WM_SETTINGCHANGE so the shell reloads the language list.
     ///
-    ///   [Case C] Truly absent — en-US is neither in the registry nor in the
-    ///            runtime HKL list. Nothing to do.
+    ///   [Case C] Truly absent(Normal)
+    ///     Definition : en-US is neither in registry nor in the runtime HKL list.
+    ///     Fix        : Nothing.
     ///
     /// Ghost vs. absent distinction:
     ///   Both have no registry entry. The difference is in the Win32 runtime:
@@ -62,26 +61,38 @@ namespace SteamVRKeyboardFix
         private const string EnUsTip      = "0409:00000409";  // InputMethodTip used in User Profile subkey
         private static readonly nint EnUsHkl = (nint)0x04090409; // HKL handle (LANGID | KLID)
 
+        /// <summary>
+        /// Time to wait after vrserver.exe is detected before attempting layout removal.
+        /// SteamVR writes the registry entries while connecting to HMD;
+        /// this delay ensures the entries are present before we read them.
+        /// </summary>
         private static readonly TimeSpan RemovalDelay = TimeSpan.FromSeconds(10);
 
         // ─── Win32 P/Invoke ───────────────────────────────────────────────────
-
-        // Returns the number of loaded HKLs in the system (all sessions, Windows 8+)
+        /// <summary>
+        /// Returns the number of loaded HKLs in the system
+        /// </summary>
         [DllImport("user32.dll", SetLastError = true)]
         private static extern int GetKeyboardLayoutList(int nBuff, [Out] nint[] lpList);
 
-        // Unloads a keyboard layout from the system (Windows 8+: system-wide)
+        /// <summary>
+        /// Unloads a keyboard layout from the system
+        /// </summary>
+        /// <param name="hkl">HKL of target layout</param>
+        /// <returns></returns>
         [DllImport("user32.dll", SetLastError = true)]
         private static extern bool UnloadKeyboardLayout(nint hkl);
 
-        // Loads a keyboard layout — used for the "add then unload" unlock trick
+        /// <summary>
+        /// Loads a keyboard layout.
+        /// </summary>
         [DllImport("user32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
         internal static extern nint LoadKeyboardLayout(string pwszKLID, uint Flags);
 
         internal const uint KLF_NOTELLSHELL = 0x00000080; // suppress shell notification on load
         internal const uint KLF_REPLACELANG = 0x00000010;
 
-        // WM_SETTINGCHANGE broadcast — notifies Explorer/CTF to reload language list
+        // WM_SETTINGCHANGE: tells Explorer / CTF Loader to reload the language list
         private const uint WM_SETTINGCHANGE = 0x001A;
         private const uint SMTO_ABORTIFHUNG = 0x0002;
         private const nint HWND_BROADCAST   = 0xFFFF;
@@ -144,8 +155,8 @@ namespace SteamVRKeyboardFix
 
         private void StartWmiWatcher()
         {
-            // root\cimv2 네임스페이스, Win32_ProcessStartTrace는 extrinsic event이므로
-            // WITHIN 절 불필요 → 폴링 없음
+            // Win32_ProcessStartTrace is an extrinsic event class — no WITHIN clause needed.
+            // The kernel pushes the event immediately on process creation; no polling occurs.
             var scope = new ManagementScope(@"\\.\root\cimv2");
             var query = new EventQuery(WmiQuery);
             _watcher  = new ManagementEventWatcher(scope, query);
@@ -174,11 +185,12 @@ namespace SteamVRKeyboardFix
         private void OnVrServerStarted(object sender, EventArrivedEventArgs e)
         {
             uint pid = 0;
-            try { pid = (uint)e.NewEvent.Properties["ProcessID"].Value; } catch { /* PID 추출 실패는 무시 */ }
+            try { pid = (uint)e.NewEvent.Properties["ProcessID"].Value; } catch { /* Ignore PID exfraction failure */ }
 
             Log($"vrserver.exe detected (PID={pid}). Scheduling cleanup in {RemovalDelay.TotalSeconds}s.",
                 EventLogEntryType.Information, 2000);
 
+            // Schedule cleanup on a thread-pool thread so we do not block the WMI callback thread.
             _ = Task.Run(() => DelayedCleanupAsync(_cts.Token));
         }
 
@@ -189,15 +201,19 @@ namespace SteamVRKeyboardFix
                 await Task.Delay(RemovalDelay, ct);
                 RemoveEnUsKeyboardLayout();
             }
-            catch (OperationCanceledException) { /* 서비스 중지 시 정상 취소 */ }
+            catch (OperationCanceledException) { /* Service stopped normally */ }
             catch (Exception ex)
             {
                 Log($"Unexpected error during cleanup: {ex}", EventLogEntryType.Error, 9001);
             }
         }
 
-        // ─── Keyboard layout removal ──────────────────────────────────────────
+        // ── Top-level removal dispatcher ──────────────────────────────────────
 
+        /// <summary>
+        /// Diagnoses the current state of the en-US keyboard layout and dispatches
+        /// to the appropriate removal path (Case A, B, or C).
+        /// </summary>
         internal void RemoveEnUsKeyboardLayout()
         {
             try
@@ -211,27 +227,24 @@ namespace SteamVRKeyboardFix
 
                 if (!inPreload && !inHklList)
                 {
-                    // Case C: 진짜로 없는 상태 — 아무 작업 없음
-                    Log("en-US is truly absent. Nothing to do.",
-                        EventLogEntryType.Information, 2002);
+                    // Case C: truly absent
+                    Log("en-US is truly absent. Nothing to do.", EventLogEntryType.Information, 2002);
                     return;
                 }
 
                 if (!inPreload && inHklList)
                 {
-                    // Case A: Ghost layout — 레지스트리에 없지만 런타임에 있음
-                    Log("Ghost layout detected (runtime HKL present, no registry entry). " +
-                        "Unloading via UnloadKeyboardLayout...",
+                    // Case A: ghost layout — runtime only, no registry entries
+                    Log("Case A: Ghost layout detected (in HKL list, not in Preload).",
                         EventLogEntryType.Information, 2004);
                     RemoveGhostLayout(activeHkl);
                     return;
                 }
 
-                // Case B: 레지스트리에 정상 등록된 레이아웃 제거
-                // (inRegistry == true인 경우. inHklList 여부와 무관하게 처리)
-                Log("Registered layout detected (present in registry). Removing via registry...",
-                    EventLogEntryType.Information, 2005);
-
+                // Case B: registered layout — registry entries exist
+                // inPreload == true; inHklList may be true or false
+                Log("Case B: Registered layout detected (present in Preload).",
+                EventLogEntryType.Information, 2005);
                 RemoveRegisteredLayout();
             }
             catch (Exception ex)
@@ -240,6 +253,20 @@ namespace SteamVRKeyboardFix
             }
         }
 
+        // ── Case A: Ghost layout removal ──────────────────────────────────────
+
+        /// <summary>
+        /// Removes a ghost en-US layout that exists only in the runtime HKL list.
+        ///
+        /// Uses the "load → unload" pattern:
+        ///   1. LoadKeyboardLayout("00000409", KLF_NOTELLSHELL | KLF_REPLACELANG)
+        ///      Re-loads the same layout under our own reference, replacing the
+        ///      SteamVR-activated handle.  KLF_NOTELLSHELL suppresses shell flicker.
+        ///   2. UnloadKeyboardLayout(reloadedHkl)
+        ///      Removes our reference.  Because SteamVR's reference was replaced in
+        ///      step 1, the layout is fully evicted from the session.
+        ///   3. BroadcastSettingChange() — refreshes the shell UI.
+        /// </summary>
         internal void RemoveGhostLayout(nint hkl)
         {
             // KLF_NOTELLSHELL: load 시 shell에 알림 억제 (불필요한 UI 깜빡임 방지)
@@ -247,27 +274,23 @@ namespace SteamVRKeyboardFix
             if (loadedHkl == (nint)0)
             {
                 Log($"LoadKeyboardLayout failed (error {Marshal.GetLastWin32Error()}). " +
-                    "Attempting direct unload without reload.",
+                    "Attempting direct unload with original handle.",
                     EventLogEntryType.Warning, 8001);
                 // reload 실패해도 unload 시도
                 loadedHkl = hkl;
             }
             else
             {
-                Log("LoadKeyboardLayout succeeded (unlock step).", EventLogEntryType.Information, 2006);
+                Log($"LoadKeyboardLayout succeeded (HKL: 0x{reloadedHkl:X8}).",
+                    EventLogEntryType.Information, 2006);
             }
 
             bool unloaded = UnloadKeyboardLayout(loadedHkl);
             if (unloaded)
-            {
-                Log("Ghost en-US layout unloaded successfully via UnloadKeyboardLayout.",
-                    EventLogEntryType.Information, 2001);
-            }
+                Log("Ghost layout unloaded successfully.", EventLogEntryType.Information, 2001);
             else
-            {
-                int err = Marshal.GetLastWin32Error();
-                Log($"UnloadKeyboardLayout failed (Win32 error {err}). " +
-                    "The layout may have been removed by another process, or requires elevated rights.",
+                Log($"UnloadKeyboardLayout failed (Win32 error {Marshal.GetLastWin32Error()}). " +
+                    "A session restart may be required.",
                     EventLogEntryType.Warning, 8002);
         }
 
@@ -310,13 +333,14 @@ namespace SteamVRKeyboardFix
             // Shell에 변경 알림 브로드캐스트 (Set-WinUserLanguageList와 동일)
             BroadcastSettingChange();
 
-            Log("Registered en-US layout removed successfully.", EventLogEntryType.Information, 2001);
+            Log("Registered en-US layout removal completed.", EventLogEntryType.Information, 2001);
         }
-
-        // ─── Helpers ──────────────────────────────────────────────────────────
+        // ── Diagnosis helpers ─────────────────────────────────────────────────
 
         /// <summary>
-        /// HKCU\...\User Profile\Languages 다중값에 en-US가 포함되어 있는지 확인합니다.
+        /// Returns true when HKCU\Keyboard Layout\Preload contains a value
+        /// whose data equals "00000409" (en-US layout ID).
+        /// Sets <paramref name="valueName"/> to the value's name (e.g. "2") when found.
         /// </summary>
         internal bool IsEnUsInPreload(out string? valueName)
         {
@@ -342,11 +366,11 @@ namespace SteamVRKeyboardFix
         }
 
         /// <summary>
-        /// Win32 GetKeyboardLayoutList()로 런타임 HKL 목록을 조회하여
-        /// en-US (HKL 0x04090409)의 존재 여부와 실제 HKL 핸들을 반환합니다.
+        /// Returns true when the runtime HKL list (GetKeyboardLayoutList) contains
+        /// the en-US handle 0x04090409.
         ///
-        /// Ghost layout은 레지스트리에 흔적이 없지만 이 목록에는 나타납니다.
-        /// Absent layout은 이 목록에도 나타나지 않습니다.
+        /// Ghost layouts are NOT in the registry but DO appear here.
+        /// Truly absent layouts appear in neither place.
         /// </summary>
         internal bool IsEnUsInHklList(out nint foundHkl)
         {
@@ -359,9 +383,8 @@ namespace SteamVRKeyboardFix
             var hkls = new nint[count];
             int filled = GetKeyboardLayoutList(count, hkls);
 
-            Log($"GetKeyboardLayoutList returned {filled} HKL(s): " +
-                string.Join(", ", hkls.Take(filled).Select(h => $"0x{h:X8}")),
-                EventLogEntryType.Information, 2011);
+            Log($"GetKeyboardLayoutList: [{string.Join(", ", hkls.Take(filled).Select(h => $"0x{h:X8}"))}]",
+                EventLogEntryType.Information, 2018);
 
             // HKL 매칭:
             //   low  word (LANGID) = 0x0409  → English United States
@@ -380,9 +403,9 @@ namespace SteamVRKeyboardFix
         }
 
         /// <summary>
-        /// WM_SETTINGCHANGE("intl")를 브로드캐스트하여 Explorer/CTF Loader가
-        /// 언어 목록을 재로드하도록 알립니다.
-        /// Set-WinUserLanguageList cmdlet 내부와 동일한 동작입니다.
+        /// Broadcasts WM_SETTINGCHANGE("intl") to all top-level windows.
+        /// Explorer, the language bar, and CTF Loader respond by reloading
+        /// the input language list — this is what Set-WinUserLanguageList does internally.
         /// </summary>
         internal void BroadcastSettingChange()
         {
