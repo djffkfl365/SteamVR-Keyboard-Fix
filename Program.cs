@@ -1,6 +1,6 @@
 using System;
-using System.Diagnostics;
 using System.Linq;
+using System.Runtime.InteropServices;
 using System.ServiceProcess;
 
 namespace SteamVRKeyboardFix
@@ -8,52 +8,162 @@ namespace SteamVRKeyboardFix
     internal static class Program
     {
         private const string DebugFlag = "--debug";
-        private static bool DebugMode = false;
 
         static void Main(string[] args)
         {
             // 이벤트 로그 소스가 없으면 생성 (관리자 권한 필요, 설치 시 수행)
             EnsureEventLogSource();
 
-            if (args.Contains(DebugFlag, StringComparer.Ordinal))
+            // If running interactively without --debug, insert --debug to arguments
+            // so the service code always sees the flag when in console mode.
+            bool DebugMode = false;
+            if (args.Contains(DebugFlag, StringComparer.OrdinalIgnoreCase))
             {
                 DebugMode = true;
             }
-           else if (Environment.UserInteractive)
+            else if (Environment.UserInteractive)
             {
-                args = args.Append("--debug").ToArray();
+                args = args.Append(DebugFlag).ToArray();
                 DebugMode = true;
             }
 
             if (DebugMode)
             {
-                // 디버그 목적: 콘솔에서 직접 실행하거나 --debug flag 붙여서 실행한 경우
-                Console.WriteLine("[SteamVRKeyboardFix] Running in interactive(debug) mode.");
-                Console.WriteLine("Press any key to stop...");
-                using var svc = new SteamVRKeyboardFixService();
-                svc.TestStart(args);
-                Console.ReadKey();
-                svc.TestStop();
+                RunDebugRepl(args);
             }
             else
             {
-                // 실제 Windows Service로 실행
+                // Running as a Windows Service (non-interactive, no --debug flag)
                 ServiceBase.Run(new SteamVRKeyboardFixService());
             }
         }
+
+        // ── Debug REPL ────────────────────────────────────────────────────────
+
+        /// <summary>
+        /// Interactive command-line REPL for testing without SteamVR.
+        /// The service WMI watcher is also started so real events are captured.
+        ///
+        /// Commands:
+        ///   run          — RemoveEnUsKeyboardLayout()  (full auto-detect + remove)
+        ///   registry     — IsEnUsInRegistry()
+        ///   hkllist      — IsEnUsInHklList()
+        ///   ghost        — RemoveGhostLayout()  (force Case A path)
+        ///   registered   — RemoveRegisteredLayout()  (force Case B path)
+        ///   load         — LoadKeyboardLayout("00000409", KLF_NOTELLSHELL | KLF_REPLACELANG)  (Reproduce ghost layout)
+        ///   broadcast    — BroadcastSettingChange()
+        ///   help         — show this list
+        ///   exit / quit  — stop service and exit
+        /// </summary>
+        private static void RunDebugRepl(string[] args)
+        {
+            Console.WriteLine("=== SteamVRKeyboardFix [DEBUG MODE] ===");
+
+            Console.WriteLine();
+
+            using var svc = new SteamVRKeyboardFixService();
+            svc.TestStart(args);
+            Console.WriteLine("WMI watcher is running. Type 'help' for commands.");
+
+            while (true)
+            {
+                Console.Write("> ");
+                string? input = Console.ReadLine()?.Trim().ToLowerInvariant();
+
+                if (string.IsNullOrEmpty(input)) continue;
+
+                switch (input)
+                {
+                    case "run":
+                        Console.WriteLine("[REPL] Calling RemoveEnUsKeyboardLayout()...");
+                        Console.WriteLine("Executing full auto-detect + remove");
+                        svc.RemoveEnUsKeyboardLayout();
+                        break;
+
+                    case "registry":
+                        bool inReg = svc.IsEnUsInRegistry();
+                        Console.WriteLine($"[REPL] IsEnUsInRegistry() = {inReg}");
+                        break;
+
+                    case "hkllist":
+                        bool inHkl = svc.IsEnUsInHklList(out nint foundHkl);
+                        Console.WriteLine($"[REPL] IsEnUsInHklList() = {inHkl} (HKL: 0x{foundHkl:X8})");
+                        break;
+
+                    case "ghost":
+                        Console.WriteLine("[REPL] Forcing Case A: RemoveGhostLayout()...");
+                        if (svc.IsEnUsInHklList(out nint ghostHkl))
+                            svc.RemoveGhostLayout(ghostHkl);
+                        else
+                            Console.WriteLine("[REPL] en-US not found in HKL list. Nothing to unload.");
+                        break;
+
+                    case "registered":
+                        Console.WriteLine("[REPL] Forcing Case B: RemoveRegisteredLayout()...");
+                        svc.RemoveRegisteredLayout();
+                        break;
+
+                    case "load":
+                        Console.WriteLine("[REPL] Calling LoadKeyboardLayout(\"00000409\", KLF_NOTELLSHELL | KLF_REPLACELANG)...");
+                        Console.WriteLine("Reproduce ghost layout");
+                        nint loaded = SteamVRKeyboardFixService.LoadKeyboardLayout(
+                            "00000409",
+                            SteamVRKeyboardFixService.KLF_NOTELLSHELL |
+                            SteamVRKeyboardFixService.KLF_REPLACELANG);
+                        Console.WriteLine(loaded == (nint) 0
+                            ? $"[REPL] LoadKeyboardLayout failed (error {Marshal.GetLastWin32Error()})"
+                            : $"[REPL] LoadKeyboardLayout succeeded. HKL = 0x{loaded:X8}");
+                        break;
+
+                    case "broadcast":
+                        Console.WriteLine("[REPL] Calling BroadcastSettingChange()...");
+                        svc.BroadcastSettingChange();
+                        break;
+
+                    case "help":
+                        PrintHelp();
+                        break;
+
+                    case "exit":
+                    case "quit":
+                        svc.TestStop();
+                        Console.WriteLine("Service stopped. Goodbye.");
+                        return;
+
+                    default:
+                        Console.WriteLine($"Unknown command: '{input}'. Type 'help' for a list.");
+                        break;
+                }
+
+                Console.WriteLine();
+            }
+        }
+
+        private static void PrintHelp()
+        {
+            Console.WriteLine();
+            Console.WriteLine("  run          RemoveEnUsKeyboardLayout()  — auto-detect and remove");
+            Console.WriteLine("  registry     IsEnUsInRegistry()           — check Preload registry key");
+            Console.WriteLine("  hkllist      IsEnUsInHklList()            — check runtime HKL list");
+            Console.WriteLine("  ghost        RemoveGhostLayout()          — force Case A removal path");
+            Console.WriteLine("  registered   RemoveRegisteredLayout()     — force Case B removal path");
+            Console.WriteLine("  load         LoadKeyboardLayout(\"00000409\", KLF_NOTELLSHELL|KLF_REPLACELANG)");
+            Console.WriteLine("  broadcast    BroadcastSettingChange()     — send WM_SETTINGCHANGE(intl)");
+            Console.WriteLine("  help         Show this help");
+            Console.WriteLine("  exit/quit    Stop service and exit");
+        }
+
+        // ── Helpers ───────────────────────────────────────────────────────────
 
         private static void EnsureEventLogSource()
         {
             const string source = "SteamVRKeyboardFix";
             try
             {
-                if (!EventLog.SourceExists(source))
-                    EventLog.CreateEventSource(source, "Application");
+                if (!System.Diagnostics.EventLog.SourceExists(source))
+                    System.Diagnostics.EventLog.CreateEventSource(source, "Application");
             }
-            catch
-            {
-                // 권한 부족 시 무시 (설치 스크립트에서 별도 처리)
-            }
+            catch { /* requires admin rights; handled by installer */ }
         }
     }
 }
