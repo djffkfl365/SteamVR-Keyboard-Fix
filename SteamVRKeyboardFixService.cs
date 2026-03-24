@@ -28,15 +28,10 @@ namespace SteamVRKeyboardFix
     ///
     ///   [Case B] Registered layout
     ///     Definition : en-US IS in HKCU\Keyboard Layout\Preload (registry entries exist).
-    ///     Fix        : "Add → Remove" trick via direct registry manipulation.
-    ///                  Writing the tip value first (add step) unlocks the layout so the
-    ///                  subsequent delete (remove step) is accepted by the OS.
-    ///                  All three registry locations are cleaned:
-    ///                    (1) HKCU\Keyboard Layout\Preload
-    ///                    (2) HKCU\Keyboard Layout\Substitutes
-    ///                    (3) HKCU\Control Panel\International\User Profile
-    ///                  Finally, UnloadKeyboardLayout() evicts the HKL from the live session
-    ///                  and WM_SETTINGCHANGE("intl") is broadcast to refresh the shell UI.
+    ///     Fix        : "Add → Remove" trick via control.exe + intl.cpl XML automation.
+    ///                  intl.cpl invokes the OS Globalization API — the same code path as
+    ///                  clicking Add/Remove in the Control Panel — so registry and runtime
+    ///                  state are both cleaned atomically without manual registry writes.
     ///
     ///   [Case C] Truly absent(Normal)
     ///     Definition : en-US is neither in registry nor in the runtime HKL list.
@@ -65,14 +60,10 @@ namespace SteamVRKeyboardFix
             "SELECT * FROM Win32_ProcessStartTrace WHERE ProcessName = 'vrserver.exe'";
 
         // Registry paths (relative to HKCU)
-        private const string PreloadKeyPath     = @"Keyboard Layout\Preload";
-        private const string SubstitutesKeyPath = @"Keyboard Layout\Substitutes";
-        private const string UserProfileKeyPath = @"Control Panel\International\User Profile";
+        private const string PreloadKeyPath = @"Keyboard Layout\Preload";
 
         // en-US identifiers
-        private const string EnUsTag      = "en-US";
-        private const string EnUsLayoutId = "00000409";       // KLID used in Preload/Substitutes
-        private const string EnUsTip      = "0409:00000409";  // InputMethodTip used in User Profile subkey
+        private const string EnUsLayoutId = "00000409";       // KLID used in Preload / LoadKeyboardLayout
         private static readonly nint EnUsHkl = (nint)0x04090409; // HKL handle (LANGID | KLID)
 
         /// <summary>
@@ -314,155 +305,93 @@ namespace SteamVRKeyboardFix
         /// <summary>
         /// Removes an en-US layout that is registered in the registry.
         ///
-        /// "Add → Remove" trick (mirrors what Set-WinUserLanguageList does internally):
-        ///   The OS marks layouts it loaded itself as locked.  Writing the InputMethodTip
-        ///   value explicitly (add step) transfers ownership to the user profile, after
-        ///   which the delete step (remove step) is accepted.
+        /// Uses the "Add → Remove" trick via control.exe + intl.cpl XML automation,
+        /// which is the same code path as clicking Add/Remove in the Control Panel.
+        /// This approach delegates all registry writes and WM_SETTINGCHANGE broadcasting
+        /// to the OS Globalization API, so no manual registry manipulation is needed.
         ///
-        /// Sequence:
-        ///   1. Add step  — write "0409:00000409" = DWORD 1 under the en-US subkey.
-        ///   2. Remove step — delete the tip value, delete the subkey, remove en-US
-        ///                    from the Languages multi-string, clean Preload and Substitutes.
-        ///   3. UnloadKeyboardLayout() — evict the HKL from the live session if still present.
-        ///   4. BroadcastSettingChange() — refresh shell UI.
+        /// Mechanism:
+        ///   control.exe invokes intl.cpl with an answer file (XML) that contains:
+        ///     <gs:InputLanguageID Action="add"    ID="0409:00000409"/>  — unlock step
+        ///     <gs:InputLanguageID Action="remove" ID="0409:00000409"/>  — removal step
+        ///   intl.cpl processes both instructions sequentially via the Windows
+        ///   Globalization Services API (same as lpksetup / INTL.CPL internals).
+        ///
+        /// The XML is written to a temporary file, passed to control.exe, then deleted.
+        /// control.exe is awaited synchronously with a timeout of <see cref="IntlCplTimeoutMs"/>.
         /// </summary>
         internal void RemoveRegisteredLayout()
         {
+            // XML answer file content — identical to the manually used Remove_en-US.xml.
+            // Action="add" first: registers the layout properly so the OS accepts the removal.
+            // Action="remove" second: removes it cleanly through the OS Globalization API.
+            const string xmlContent =
+                "<gs:GlobalizationServices xmlns:gs=\"urn:longhornGlobalizationUnattend\">\r\n" +
+                "    <gs:UserList>\r\n" +
+                "        <gs:User UserID=\"Current\"/>\r\n" +
+                "    </gs:UserList>\r\n" +
+                "    <gs:InputPreferences>\r\n" +
+                "        <gs:InputLanguageID Action=\"add\"    ID=\"0409:00000409\"/>\r\n" +
+                "        <gs:InputLanguageID Action=\"remove\" ID=\"0409:00000409\"/>\r\n" +
+                "    </gs:InputPreferences>\r\n" +
+                "</gs:GlobalizationServices>";
+
+            string tmpXml = System.IO.Path.Combine(
+                System.IO.Path.GetTempPath(),
+                $"svkbfix_{Guid.NewGuid():N}.xml");
+
             try
             {
-                using var profileKey = Registry.CurrentUser.OpenSubKey(UserProfileKeyPath, writable: true)
-                    ?? throw new InvalidOperationException($"Registry key not found: {UserProfileKeyPath}");
+                System.IO.File.WriteAllText(tmpXml, xmlContent, System.Text.Encoding.UTF8);
+                Log($"Temporary XML written to '{tmpXml}'.", EventLogEntryType.Information, 2030);
 
-                // ── Add step: write tip value to unlock ───────────────────────
-                // Open or create the en-US subkey and write the tip value.
-                // This is the "add" half of the add→remove trick.
-                using (var enUsKey = profileKey.OpenSubKey(EnUsTag, writable: true)
-                                     ?? profileKey.CreateSubKey(EnUsTag))
+                // control.exe is a thin launcher; the actual work is done inside intl.cpl.
+                // The process must be waited on — intl.cpl is synchronous within control.exe.
+                var psi = new ProcessStartInfo
                 {
-                    enUsKey.SetValue(EnUsTip, 1, RegistryValueKind.DWord);
-                    Log($"Add step: tip value '{EnUsTip}' written to en-US subkey (unlock).",
-                        EventLogEntryType.Information, 2006);
+                    FileName        = "control.exe",
+                    Arguments       = $"intl.cpl,, /f:\"{tmpXml}\"",
+                    UseShellExecute = false,
+                    CreateNoWindow  = true,
+                };
+
+                Log($"Invoking: control.exe intl.cpl,, /f:\"{tmpXml}\"",
+                    EventLogEntryType.Information, 2031);
+
+                using var proc = Process.Start(psi)
+                    ?? throw new InvalidOperationException("Failed to start control.exe.");
+
+                bool exited = proc.WaitForExit(IntlCplTimeoutMs);
+                if (!exited)
+                {
+                    proc.Kill();
+                    Log($"control.exe did not exit within {IntlCplTimeoutMs} ms — process killed.",
+                        EventLogEntryType.Warning, 8006);
                 }
-
-                // ── Remove step ───────────────────────────────────────────────
-
-                // Delete the tip value
-                using (var enUsKey = profileKey.OpenSubKey(EnUsTag, writable: true))
+                else
                 {
-                    enUsKey?.DeleteValue(EnUsTip, throwOnMissingValue: false);
-                    Log($"Remove step: tip value '{EnUsTip}' deleted.", EventLogEntryType.Information, 2007);
-                }
-
-                // Delete the en-US subkey if no other tip values remain
-                bool otherTipsRemain;
-                using (var checkKey = profileKey.OpenSubKey(EnUsTag))
-                    otherTipsRemain = checkKey != null && checkKey.GetValueNames().Length > 0;
-
-                if (!otherTipsRemain)
-                {
-                    profileKey.DeleteSubKeyTree(EnUsTag, throwOnMissingSubKey: false);
-                    Log("en-US subkey deleted from User Profile.", EventLogEntryType.Information, 2008);
-                }
-
-                // Remove en-US from the Languages multi-string
-                // (skip if en-US is the primary/only language)
-                var languages = profileKey.GetValue("Languages") as string[] ?? Array.Empty<string>();
-                if (languages.Contains(EnUsTag, StringComparer.OrdinalIgnoreCase) &&
-                    !languages[0].Equals(EnUsTag, StringComparison.OrdinalIgnoreCase))
-                {
-                    var newLangs = languages
-                        .Where(l => !l.Equals(EnUsTag, StringComparison.OrdinalIgnoreCase))
-                        .ToArray();
-                    profileKey.SetValue("Languages", newLangs, RegistryValueKind.MultiString);
-                    Log("en-US removed from Languages list.", EventLogEntryType.Information, 2009);
+                    Log($"control.exe exited (code {proc.ExitCode}).",
+                        EventLogEntryType.Information, 2032);
                 }
             }
             catch (Exception ex)
             {
-                Log($"User Profile registry cleanup failed: {ex}", EventLogEntryType.Error, 9003);
+                Log($"RemoveRegisteredLayout (intl.cpl) failed: {ex}", EventLogEntryType.Error, 9003);
             }
-
-            // Clean Preload and Substitutes regardless of User Profile result
-            CleanPreload();
-            CleanSubstitutes();
-
-            // Evict the HKL from the live session if it is still present
-            if (IsEnUsInHklList(out nint hklToUnload))
+            finally
             {
-                Log("HKL still present after registry cleanup. Unloading...",
-                    EventLogEntryType.Information, 2012);
-                RemoveGhostLayout(hklToUnload); // reuse ghost removal (load→unload + broadcast)
-            }
-            else
-            {
-                // HKL already gone; just broadcast to refresh the shell
-                BroadcastSettingChange();
+                // Always clean up the temporary XML file.
+                try { System.IO.File.Delete(tmpXml); } catch { /* best-effort */ }
             }
 
             Log("Registered en-US layout removal completed.", EventLogEntryType.Information, 2001);
         }
 
-        // ── Registry helpers ──────────────────────────────────────────────────
-
         /// <summary>
-        /// Removes en-US (data == "00000409") from HKCU\Keyboard Layout\Preload
-        /// and renumbers the remaining entries so the ordinal sequence is gapless.
+        /// Maximum time (ms) to wait for control.exe / intl.cpl to finish.
+        /// intl.cpl is normally near-instant; 15 s is a conservative upper bound.
         /// </summary>
-        private void CleanPreload()
-        {
-            using var preloadKey = Registry.CurrentUser.OpenSubKey(PreloadKeyPath, writable: true);
-            if (preloadKey == null)
-            {
-                Log("Preload key not found — skipping.", EventLogEntryType.Warning, 8005);
-                return;
-            }
-
-            var all = preloadKey.GetValueNames()
-                .Select(n => (Name: n, Data: (preloadKey.GetValue(n) as string) ?? string.Empty))
-                .OrderBy(v => { int.TryParse(v.Name, out int i); return i; })
-                .ToList();
-
-            var keep = all
-                .Where(v => !v.Data.Equals(EnUsLayoutId, StringComparison.OrdinalIgnoreCase))
-                .Select(v => v.Data)
-                .ToList();
-
-            if (keep.Count == all.Count)
-            {
-                Log("Preload: no en-US entry found.", EventLogEntryType.Information, 2013);
-                return;
-            }
-
-            // Delete all, then re-insert with gapless ordinal names (1, 2, 3, ...)
-            foreach (var v in all)
-                preloadKey.DeleteValue(v.Name, throwOnMissingValue: false);
-            for (int i = 0; i < keep.Count; i++)
-                preloadKey.SetValue((i + 1).ToString(), keep[i], RegistryValueKind.String);
-
-            Log($"Preload: en-US removed. Remaining: {keep.Count}.", EventLogEntryType.Information, 2010);
-        }
-
-        /// <summary>
-        /// Removes any entry in HKCU\Keyboard Layout\Substitutes whose name or data
-        /// references "00000409" (the en-US layout ID).
-        /// </summary>
-        private void CleanSubstitutes()
-        {
-            using var subsKey = Registry.CurrentUser.OpenSubKey(SubstitutesKeyPath, writable: true);
-            if (subsKey == null) return; // Substitutes key is optional
-
-            var toDelete = subsKey.GetValueNames()
-                .Where(n => n.Equals(EnUsLayoutId, StringComparison.OrdinalIgnoreCase) ||
-                            (subsKey.GetValue(n) as string ?? string.Empty)
-                                .Equals(EnUsLayoutId, StringComparison.OrdinalIgnoreCase))
-                .ToList();
-
-            foreach (var name in toDelete)
-            {
-                subsKey.DeleteValue(name, throwOnMissingValue: false);
-                Log($"Substitutes: deleted value '{name}'.", EventLogEntryType.Information, 2011);
-            }
-        }
+        private const int IntlCplTimeoutMs = 15_000;
 
         // ── Diagnosis helpers ─────────────────────────────────────────────────
 
