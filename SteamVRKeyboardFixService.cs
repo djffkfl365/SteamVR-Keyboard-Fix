@@ -269,15 +269,13 @@ namespace SteamVRKeyboardFix
         /// </summary>
         internal void RemoveGhostLayout(nint hkl)
         {
-            // KLF_NOTELLSHELL: load 시 shell에 알림 억제 (불필요한 UI 깜빡임 방지)
-            nint loadedHkl = LoadKeyboardLayout("00000409", KLF_NOTELLSHELL | KLF_REPLACELANG);
-            if (loadedHkl == (nint)0)
+            nint reloadedHkl = LoadKeyboardLayout(EnUsLayoutId, KLF_NOTELLSHELL | KLF_REPLACELANG);
+            if (reloadedHkl == (nint) 0)
             {
                 Log($"LoadKeyboardLayout failed (error {Marshal.GetLastWin32Error()}). " +
                     "Attempting direct unload with original handle.",
                     EventLogEntryType.Warning, 8001);
-                // reload 실패해도 unload 시도
-                loadedHkl = hkl;
+                reloadedHkl = hkl;
             }
             else
             {
@@ -285,7 +283,7 @@ namespace SteamVRKeyboardFix
                     EventLogEntryType.Information, 2006);
             }
 
-            bool unloaded = UnloadKeyboardLayout(loadedHkl);
+            bool unloaded = UnloadKeyboardLayout(reloadedHkl);
             if (unloaded)
                 Log("Ghost layout unloaded successfully.", EventLogEntryType.Information, 2001);
             else
@@ -386,11 +384,6 @@ namespace SteamVRKeyboardFix
             Log($"GetKeyboardLayoutList: [{string.Join(", ", hkls.Take(filled).Select(h => $"0x{h:X8}"))}]",
                 EventLogEntryType.Information, 2018);
 
-            // HKL 매칭:
-            //   low  word (LANGID) = 0x0409  → English United States
-            //   high word (device) = 0x0409  → United States keyboard
-            // SteamVR가 LoadKeyboardLayout("00000409") 으로 로드하면 정확히 이 값이 됩니다.
-            // 다른 en-US 변형(Dvorak 등)은 high word가 다르므로 별도 처리가 필요하지 않습니다.
             for (int i = 0; i < filled; i++)
             {
                 if (hkls[i] == EnUsHkl)
