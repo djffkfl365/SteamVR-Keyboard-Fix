@@ -8,9 +8,25 @@ namespace SteamVRKeyboardFix
     internal static class Program
     {
         private const string DebugFlag = "--debug";
+        private const string InstallFlag   = "--install";
+        private const string UninstallFlag = "--uninstall";
 
         static void Main(string[] args)
         {
+            // --install / --uninstall: service registration (requires admin).
+            // Handled before EnsureEventLogSource so the event log source is
+            // created by ServiceManager.Install() itself.
+            if (args.Contains(InstallFlag, StringComparer.OrdinalIgnoreCase))
+            {
+                ServiceManager.Install();
+                return;
+            }
+            if (args.Contains(UninstallFlag, StringComparer.OrdinalIgnoreCase))
+            {
+                ServiceManager.Uninstall();
+                return;
+            }
+            
             // 이벤트 로그 소스가 없으면 생성 (관리자 권한 필요, 설치 시 수행)
             EnsureEventLogSource();
 
@@ -45,6 +61,8 @@ namespace SteamVRKeyboardFix
         /// The service WMI watcher is also started so real events are captured.
         ///
         /// Commands:
+        ///   install      — (Admin) Install as service with current exe file path
+        ///   uninstall    — (Admin) Uninstall exisiting service
         ///   run          — RemoveEnUsKeyboardLayout()  (full auto-detect + remove)
         ///   registry     — IsEnUsInRegistry()
         ///   hkllist      — IsEnUsInHklList()
@@ -130,6 +148,21 @@ namespace SteamVRKeyboardFix
                         svc.TestStop();
                         Console.WriteLine("Service stopped. Goodbye.");
                         return;
+
+                    case "install":
+                        try
+                        {
+                            ServiceManager.Install();
+                        }
+                        catch(InvalidOperationException ex)
+                        {
+                            Console.WriteLine($"{ex.Message}");
+                        }
+                        break;
+
+                    case "uninstall":
+                        ServiceManager.Uninstall();
+                        break;
 
                     default:
                         Console.WriteLine($"Unknown command: '{input}'. Type 'help' for a list.");

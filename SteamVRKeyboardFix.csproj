@@ -22,7 +22,8 @@
     <Authors>Izuku39</Authors>
     <Company>Izuku39</Company>
     <PackageIcon>Icon.ico</PackageIcon>
-    <ApplicationIcon>icon.ico</ApplicationIcon>
+    <ApplicationIcon>icon\icon.ico</ApplicationIcon>
+    <SignAssembly>False</SignAssembly>
   </PropertyGroup>
 
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
@@ -34,7 +35,13 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <Content Include="icon.ico" />
+    <Compile Remove="Installer\**" />
+    <EmbeddedResource Remove="Installer\**" />
+    <None Remove="Installer\**" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Content Include="icon\icon.ico" />
   </ItemGroup>
 
   <ItemGroup>
@@ -42,10 +49,6 @@
     <Reference Include="System.Management" />
     <Reference Include="System.ServiceProcess" />
     <Reference Include="System.Configuration.Install" />
-  </ItemGroup>
-
-  <ItemGroup>
-    <Folder Include="Properties\" />
   </ItemGroup>
 
   <ItemGroup>
