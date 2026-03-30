@@ -400,3 +400,7 @@ FodyWeavers.xsd
 # Legacy
 .legacy
 .Removal-candidate
+
+#Icons
+icon/*
+!icon/icon.ico

@@ -58,12 +58,13 @@ namespace SteamVRKeyboardFix
         private static void RunDebugRepl(string[] args)
         {
             Console.WriteLine("=== SteamVRKeyboardFix [DEBUG MODE] ===");
+            Console.WriteLine($"Version: {System.Reflection.Assembly.GetExecutingAssembly().GetName().Version}");
 
             Console.WriteLine();
 
             using var svc = new SteamVRKeyboardFixService();
             svc.TestStart(args);
-            Console.WriteLine("WMI watcher is running. Type 'help' for commands.");
+            Console.WriteLine("Type 'help' for commands.");
 
             while (true)
             {
