@@ -95,7 +95,6 @@ namespace SteamVRKeyboardFix
                 Console.Error.WriteLine("       Right-click the executable and choose 'Run as administrator'.");
                 Console.Error.WriteLine("Press any key to exit");
                 Console.ReadKey();
-                Environment.Exit(1);
             }
 
             string exePath    = Process.GetCurrentProcess().MainModule!.FileName;
@@ -150,6 +149,8 @@ namespace SteamVRKeyboardFix
             Console.WriteLine($"[OK] Service '{ServiceName}' installed and started successfully.");
             Console.WriteLine($"     Account : {account}");
             Console.WriteLine($"     Log     : Event Viewer > Application > {EventLogSource}");
+            Console.WriteLine($"Press any key to continue");
+            Console.ReadKey(); // Prevent console from closing so log can be read during installation process via installer
         }
 
         /// <summary>
@@ -163,7 +164,6 @@ namespace SteamVRKeyboardFix
                 Console.Error.WriteLine("ERROR: Administrator privileges are required for uninstallation.");
                 Console.Error.WriteLine("Press any key to exit");
                 Console.ReadKey();
-                Environment.Exit(1);
             }
 
             RemoveExistingService();
@@ -175,6 +175,8 @@ namespace SteamVRKeyboardFix
             }
 
             Console.WriteLine($"[OK] Service '{ServiceName}' uninstalled.");
+            Console.WriteLine($"Press any key to continue");
+            Console.ReadKey(); // Prevent console from closing so log can be read during uninstallation process via uninstaller
         }
 
         // ─── Helpers ──────────────────────────────────────────────────────────

@@ -18,12 +18,32 @@ namespace SteamVRKeyboardFix
             // created by ServiceManager.Install() itself.
             if (args.Contains(InstallFlag, StringComparer.OrdinalIgnoreCase))
             {
-                ServiceManager.Install();
+                try
+                {
+                    ServiceManager.Install();
+                }
+                catch(InvalidOperationException ex)
+                {
+                    Console.WriteLine($"{ex.Message}");
+                    Console.WriteLine("Press any key to continue");
+                    Console.ReadKey(); // Prevent console from closing so log can be read during installation process via installer
+                    throw ex;
+                }
                 return;
             }
             if (args.Contains(UninstallFlag, StringComparer.OrdinalIgnoreCase))
             {
-                ServiceManager.Uninstall();
+                try
+                {
+                    ServiceManager.Uninstall();
+                }
+                catch (InvalidOperationException ex)
+                {
+                    Console.WriteLine($"{ex.Message}");
+                    Console.WriteLine("Press any key to continue");
+                    Console.ReadKey(); // Prevent console from closing so log can be read during uninstallation process via uninstaller
+                    throw ex;
+                }
                 return;
             }
             
@@ -161,7 +181,14 @@ namespace SteamVRKeyboardFix
                         break;
 
                     case "uninstall":
-                        ServiceManager.Uninstall();
+                        try
+                        {
+                            ServiceManager.Uninstall();
+                        }
+                        catch (InvalidOperationException ex)
+                        {
+                            Console.WriteLine($"{ex.Message}");
+                        }
                         break;
 
                     default:
