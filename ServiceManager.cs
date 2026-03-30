@@ -80,6 +80,23 @@ namespace SteamVRKeyboardFix
         private const uint SERVICE_CONFIG_DESCRIPTION = 0x01;
         private const uint SERVICE_NO_CHANGE       = 0xFFFFFFFF;
 
+        [DllImport("advapi32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+        private static extern bool LogonUser(
+            string lpszUsername,
+            string? lpszDomain,
+            string? lpszPassword,
+            int dwLogonType,
+            int dwLogonProvider,
+            out nint phToken
+        );
+
+        [DllImport("kernel32.dll", SetLastError = true)]
+        private static extern bool CloseHandle(nint hHandle);
+
+        private const int LOGON32_LOGON_NETWORK = 2;
+        private const int LOGON32_PROVIDER_DEFAULT = 0;
+
+
         // ─── Public API ───────────────────────────────────────────────────────
 
         /// <summary>
@@ -99,7 +116,25 @@ namespace SteamVRKeyboardFix
 
             string exePath    = Process.GetCurrentProcess().MainModule!.FileName;
             string account    = DetectCurrentDesktopUser();
-            string? password  = PromptPassword(account);
+            string? password = null;
+
+            PromptPasswordInstruction();
+            // Ask user for password until it is validated successfully, to avoid installing the service with wrong credentials.
+            while (true)
+            {
+                password = PromptPassword(account);
+                try
+                {
+                    ValidatePassword(account, password);
+                    break;
+                }
+                catch (InvalidOperationException ex)
+                {
+                    Console.WriteLine($"[ERROR] {ex.Message}");
+                    Console.WriteLine($"[ERROR] Failed to logon {account}. Please try again");
+                    Console.WriteLine("        (Please enter your actual Windows 'Password', NOT your PIN.)\n");
+                }
+            }
 
             Console.WriteLine($"[INFO] Service executable : {exePath}");
             Console.WriteLine($"[INFO] Service account    : {account}");
@@ -337,6 +372,24 @@ namespace SteamVRKeyboardFix
             return $"{Environment.MachineName}\\{Environment.UserName}";
         }
 
+        private static void PromptPasswordInstruction()
+        {
+            Console.WriteLine();
+            Console.WriteLine("============================================================");
+            Console.WriteLine(" [SteamVR Keyboard Fix - Background Service Registration]");
+            Console.WriteLine();
+            Console.WriteLine(" To automatically detect and remove the en-US keyboard layout,");
+            Console.WriteLine(" the background service needs permission to run under your");
+            Console.WriteLine(" current Windows account.");
+            Console.WriteLine();
+            Console.WriteLine(" * Note 1: Please enter your actual Windows 'Password', NOT your PIN.");
+            Console.WriteLine(" * Note 2: If your account has no password, simply press [Enter].");
+            Console.WriteLine("           Your input will be masked with '*' and used securely only");
+            Console.WriteLine("           to register the local service.");
+            Console.WriteLine("============================================================");
+            Console.WriteLine();
+        }
+
         private static string? PromptPassword(string account)
         {
             const char MaskChar = '*';
@@ -362,6 +415,38 @@ namespace SteamVRKeyboardFix
             } while (key.Key != ConsoleKey.Enter);
             Console.WriteLine();
             return pwd.ToString();
+        }
+
+        private static bool ValidatePassword(string account, string? password)
+        {
+            // Pass immediately if the password is empty.
+            // (Blank passwords can be rejected by the network logon check due to Windows local security policy restrictions.)
+            //if (string.IsNullOrEmpty(password)) return true;
+
+            string domain = ".";
+            string user = account;
+
+            // Parse the account name, which is typically in the "DOMAIN\User" format.
+            int slash = account.IndexOf('\\');
+            if (slash >= 0)
+            {
+                domain = account.Substring(0, slash);
+                user = account.Substring(slash + 1);
+            }
+
+            // Quickly validate the credentials using the Network Logon type (3).
+            bool success = LogonUser(user, domain, password, LOGON32_LOGON_NETWORK, LOGON32_PROVIDER_DEFAULT, out nint token);
+
+            if (success)
+            {
+                CloseHandle(token); // Close the handle to prevent memory leaks
+                return true;
+            }
+            else
+            {
+                Fail("Credential validation", Marshal.GetLastWin32Error());
+            }
+            return false;
         }
 
         private static bool IsAdministrator()
