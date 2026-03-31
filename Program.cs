@@ -8,9 +8,45 @@ namespace SteamVRKeyboardFix
     internal static class Program
     {
         private const string DebugFlag = "--debug";
+        private const string InstallFlag   = "--install";
+        private const string UninstallFlag = "--uninstall";
 
         static void Main(string[] args)
         {
+            // --install / --uninstall: service registration (requires admin).
+            // Handled before EnsureEventLogSource so the event log source is
+            // created by ServiceManager.Install() itself.
+            if (args.Contains(InstallFlag, StringComparer.OrdinalIgnoreCase))
+            {
+                try
+                {
+                    ServiceManager.Install();
+                }
+                catch(InvalidOperationException ex)
+                {
+                    Console.WriteLine($"{ex.Message}");
+                    Console.WriteLine("Press any key to continue");
+                    Console.ReadKey(); // Prevent console from closing so log can be read during installation process via installer
+                    throw ex;
+                }
+                return;
+            }
+            if (args.Contains(UninstallFlag, StringComparer.OrdinalIgnoreCase))
+            {
+                try
+                {
+                    ServiceManager.Uninstall();
+                }
+                catch (InvalidOperationException ex)
+                {
+                    Console.WriteLine($"{ex.Message}");
+                    Console.WriteLine("Press any key to continue");
+                    Console.ReadKey(); // Prevent console from closing so log can be read during uninstallation process via uninstaller
+                    throw ex;
+                }
+                return;
+            }
+            
             // 이벤트 로그 소스가 없으면 생성 (관리자 권한 필요, 설치 시 수행)
             EnsureEventLogSource();
 
@@ -45,6 +81,8 @@ namespace SteamVRKeyboardFix
         /// The service WMI watcher is also started so real events are captured.
         ///
         /// Commands:
+        ///   install      — (Admin) Install as service with current exe file path
+        ///   uninstall    — (Admin) Uninstall exisiting service
         ///   run          — RemoveEnUsKeyboardLayout()  (full auto-detect + remove)
         ///   registry     — IsEnUsInRegistry()
         ///   hkllist      — IsEnUsInHklList()
@@ -58,12 +96,13 @@ namespace SteamVRKeyboardFix
         private static void RunDebugRepl(string[] args)
         {
             Console.WriteLine("=== SteamVRKeyboardFix [DEBUG MODE] ===");
+            Console.WriteLine($"Version: {System.Reflection.Assembly.GetExecutingAssembly().GetName().Version}");
 
             Console.WriteLine();
 
             using var svc = new SteamVRKeyboardFixService();
             svc.TestStart(args);
-            Console.WriteLine("WMI watcher is running. Type 'help' for commands.");
+            Console.WriteLine("Type 'help' for commands.");
 
             while (true)
             {
@@ -129,6 +168,28 @@ namespace SteamVRKeyboardFix
                         svc.TestStop();
                         Console.WriteLine("Service stopped. Goodbye.");
                         return;
+
+                    case "install":
+                        try
+                        {
+                            ServiceManager.Install();
+                        }
+                        catch(InvalidOperationException ex)
+                        {
+                            Console.WriteLine($"{ex.Message}");
+                        }
+                        break;
+
+                    case "uninstall":
+                        try
+                        {
+                            ServiceManager.Uninstall();
+                        }
+                        catch (InvalidOperationException ex)
+                        {
+                            Console.WriteLine($"{ex.Message}");
+                        }
+                        break;
 
                     default:
                         Console.WriteLine($"Unknown command: '{input}'. Type 'help' for a list.");

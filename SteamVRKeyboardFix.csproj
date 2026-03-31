@@ -1,21 +1,61 @@
-<Project Sdk="Microsoft.NET.Sdk">
+﻿<Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
     <TargetFramework>net472</TargetFramework>
-    <OutputType>Exe</OutputType>
-    <AssemblyName>SteamVRKeyboardFix</AssemblyName>
-    <RootNamespace>SteamVRKeyboardFix</RootNamespace>
-    <Nullable>enable</Nullable>
     <LangVersion>10</LangVersion>
     <Platforms>x64</Platforms>
     <PlatformTarget>x64</PlatformTarget>
+    
+
+    <AssemblyName>SteamVRKeyboardFix</AssemblyName>
+    <RootNamespace>SteamVRKeyboardFix</RootNamespace>
+    
+    <OutputType>Exe</OutputType>
+    <Nullable>enable</Nullable>
+    
+    <RepositoryUrl>https://github.com/djffkfl365/SteamVR-Keyboard-Fix</RepositoryUrl>
+    <RepositoryType>git</RepositoryType>
+
+    <Title>SteamVR Keyboard Fix</Title>
+    <Version>0.0.1</Version>
+    <VersionSuffix>alpha</VersionSuffix>
+    <Authors>Izuku39</Authors>
+    <Company>Izuku39</Company>
+    <PackageIcon>Icon.ico</PackageIcon>
+    <ApplicationIcon>icon\icon.ico</ApplicationIcon>
+    <SignAssembly>False</SignAssembly>
   </PropertyGroup>
+
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
+    <GenerateAssemblyInfo>True</GenerateAssemblyInfo>
+  </PropertyGroup>
+
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
+    <GenerateAssemblyInfo>False</GenerateAssemblyInfo>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Compile Remove="Installer\**" />
+    <EmbeddedResource Remove="Installer\**" />
+    <None Remove="Installer\**" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Content Include="icon\icon.ico" />
+  </ItemGroup>
 
   <ItemGroup>
     <!-- All three assemblies are in the GAC on .NET Framework 4.7.2; no NuGet needed. -->
     <Reference Include="System.Management" />
     <Reference Include="System.ServiceProcess" />
     <Reference Include="System.Configuration.Install" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Update="Icon.ico">
+      <Pack>True</Pack>
+      <PackagePath>\</PackagePath>
+    </None>
   </ItemGroup>
 
 </Project>
