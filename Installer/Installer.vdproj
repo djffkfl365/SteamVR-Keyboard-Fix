@@ -15,7 +15,13 @@
     {
         "Entry"
         {
-        "MsmKey" = "8:_A88C36910A764EC7B58193D9F7EBF809"
+        "MsmKey" = "8:_34811235DBD44B098E2CE49498C0A551"
+        "OwnerKey" = "8:_UNDEFINED"
+        "MsmSig" = "8:_UNDEFINED"
+        }
+        "Entry"
+        {
+        "MsmKey" = "8:_C73D9215714B4649B6C03701D272A7C2"
         "OwnerKey" = "8:_UNDEFINED"
         "MsmSig" = "8:_UNDEFINED"
         }
@@ -37,6 +43,22 @@
         "PrivateKeyFile" = "8:"
         "TimeStampServer" = "8:"
         "InstallerBootstrapper" = "3:2"
+            "BootstrapperCfg:{63ACBE69-63AA-4F98-B2B6-99F9E24495F2}"
+            {
+            "Enabled" = "11:TRUE"
+            "PromptEnabled" = "11:TRUE"
+            "PrerequisitesLocation" = "2:1"
+            "Url" = "8:"
+            "ComponentsUrl" = "8:"
+                "Items"
+                {
+                    "{EDC2488A-8267-493A-A98E-7D9C3B36CDF3}:.NETFramework,Version=v4.7.2"
+                    {
+                    "Name" = "8:Microsoft .NET Framework 4.7.2 (x86 and x64)"
+                    "ProductCode" = "8:.NETFramework,Version=v4.7.2"
+                    }
+                }
+            }
         }
         "Release"
         {
@@ -53,12 +75,56 @@
         "PrivateKeyFile" = "8:"
         "TimeStampServer" = "8:"
         "InstallerBootstrapper" = "3:2"
+            "BootstrapperCfg:{63ACBE69-63AA-4F98-B2B6-99F9E24495F2}"
+            {
+            "Enabled" = "11:TRUE"
+            "PromptEnabled" = "11:TRUE"
+            "PrerequisitesLocation" = "2:1"
+            "Url" = "8:"
+            "ComponentsUrl" = "8:"
+                "Items"
+                {
+                    "{EDC2488A-8267-493A-A98E-7D9C3B36CDF3}:.NETFramework,Version=v4.7.2"
+                    {
+                    "Name" = "8:Microsoft .NET Framework 4.7.2 (x86 and x64)"
+                    "ProductCode" = "8:.NETFramework,Version=v4.7.2"
+                    }
+                }
+            }
         }
     }
     "Deployable"
     {
         "CustomAction"
         {
+            "{4AA51A2D-7D85-4A59-BA75-B0809FC8B380}:_1038A92ABEC24295AB5EE3DCB743D4D2"
+            {
+            "Name" = "8:기본 출력 from SteamVRKeyboardFix (Active)"
+            "Condition" = "8:"
+            "Object" = "8:_34811235DBD44B098E2CE49498C0A551"
+            "FileType" = "3:2"
+            "InstallAction" = "3:2"
+            "Arguments" = "8:--install"
+            "EntryPoint" = "8:"
+            "Sequence" = "3:1"
+            "Identifier" = "8:_68CCFA9C_19D5_467C_8F01_DCCDEE918059"
+            "InstallerClass" = "11:FALSE"
+            "CustomActionData" = "8:"
+            }
+            "{4AA51A2D-7D85-4A59-BA75-B0809FC8B380}:_9279688D3FC54E26AD6F6D1EF039C135"
+            {
+            "Name" = "8:기본 출력 from SteamVRKeyboardFix (Active)"
+            "Condition" = "8:"
+            "Object" = "8:_34811235DBD44B098E2CE49498C0A551"
+            "FileType" = "3:2"
+            "InstallAction" = "3:4"
+            "Arguments" = "8:--uninstall"
+            "EntryPoint" = "8:"
+            "Sequence" = "3:1"
+            "Identifier" = "8:_929CFAB6_BA1C_4F44_A43F_BD583D59E209"
+            "InstallerClass" = "11:FALSE"
+            "CustomActionData" = "8:"
+            }
         }
         "DefaultFeature"
         {
@@ -70,10 +136,38 @@
         {
             "LaunchCondition"
             {
+                "{A06ECF26-33A3-4562-8140-9B0E340D4F24}:_A7B47D9532174944B11E1F733CE291F0"
+                {
+                "Name" = "8:.NET Framework"
+                "Message" = "8:[VSDNETMSG]"
+                "FrameworkVersion" = "8:.NETFramework,Version=v4.7.2"
+                "AllowLaterVersions" = "11:FALSE"
+                "InstallUrl" = "8:http://go.microsoft.com/fwlink/?LinkId=863262"
+                }
             }
         }
         "File"
         {
+            "{1FB2D0AE-D3B9-43D4-B9DD-F88EC61E35DE}:_C73D9215714B4649B6C03701D272A7C2"
+            {
+            "SourcePath" = "8:..\\icon\\icon.ico"
+            "TargetName" = "8:icon.ico"
+            "Tag" = "8:"
+            "Folder" = "8:_8D714FDB2DE7425DAA659390CB85CFB4"
+            "Condition" = "8:"
+            "Transitive" = "11:FALSE"
+            "Vital" = "11:TRUE"
+            "ReadOnly" = "11:FALSE"
+            "Hidden" = "11:FALSE"
+            "System" = "11:FALSE"
+            "Permanent" = "11:FALSE"
+            "SharedLegacy" = "11:FALSE"
+            "PackageAs" = "3:1"
+            "Register" = "3:1"
+            "Exclude" = "11:FALSE"
+            "IsDependency" = "11:FALSE"
+            "IsolateTo" = "8:"
+            }
         }
         "FileType"
         {
@@ -104,7 +198,7 @@
             }
             "{3C67513D-01DD-4637-8A68-80971EB9504F}:_8D714FDB2DE7425DAA659390CB85CFB4"
             {
-            "DefaultLocation" = "8:[ProgramFilesFolder][Manufacturer]\\[ProductName]"
+            "DefaultLocation" = "8:[ProgramFiles64Folder]\\[ProductName]"
             "Name" = "8:#1925"
             "AlwaysCreate" = "11:FALSE"
             "Condition" = "8:"
@@ -124,35 +218,35 @@
         "MsiBootstrapper"
         {
         "LangId" = "3:1042"
-        "RequiresElevation" = "11:FALSE"
+        "RequiresElevation" = "11:TRUE"
         }
         "Product"
         {
         "Name" = "8:Microsoft Visual Studio"
-        "ProductName" = "8:Installer"
-        "ProductCode" = "8:{F285760D-0FA9-40AC-9687-E9D6D5CD27E0}"
-        "PackageCode" = "8:{E2025753-3886-4991-959E-EE48122A9935}"
+        "ProductName" = "8:SteamVR Keyboard Fix Installer"
+        "ProductCode" = "8:{F47B210A-1F88-4064-9A35-11A1D1C03F00}"
+        "PackageCode" = "8:{BD1BB043-BE5E-4164-92C0-528829C6466E}"
         "UpgradeCode" = "8:{706F11D5-A05D-4721-A662-23A4E47B081A}"
         "AspNetVersion" = "8:2.0.50727.0"
         "RestartWWWService" = "11:FALSE"
-        "RemovePreviousVersions" = "11:FALSE"
+        "RemovePreviousVersions" = "11:TRUE"
         "DetectNewerInstalledVersion" = "11:TRUE"
         "InstallAllUsers" = "11:FALSE"
-        "ProductVersion" = "8:1.0.0"
-        "Manufacturer" = "8:Default Company Name"
+        "ProductVersion" = "8:0.0.1"
+        "Manufacturer" = "8:Izuku39"
         "ARPHELPTELEPHONE" = "8:"
         "ARPHELPLINK" = "8:"
-        "Title" = "8:Installer"
+        "Title" = "8:SteamVR Keyboard Fix Installer"
         "Subject" = "8:"
-        "ARPCONTACT" = "8:Default Company Name"
+        "ARPCONTACT" = "8:Izuku39"
         "Keywords" = "8:"
         "ARPCOMMENTS" = "8:"
         "ARPURLINFOABOUT" = "8:"
-        "ARPPRODUCTICON" = "8:"
+        "ARPPRODUCTICON" = "8:_C73D9215714B4649B6C03701D272A7C2"
         "ARPIconIndex" = "3:0"
         "SearchPath" = "8:"
         "UseSystemSearchPath" = "11:TRUE"
-        "TargetPlatform" = "3:0"
+        "TargetPlatform" = "3:1"
         "PreBuildEvent" = "8:"
         "PostBuildEvent" = "8:"
         "RunPostBuildEvent" = "3:0"
@@ -348,7 +442,7 @@
             "Attributes" = "3:2"
                 "Dialogs"
                 {
-                    "{688940B3-5CA9-4162-8DEE-2993FA9D8CBC}:_AAA07F21363C47DBAFAB56A00DD22168"
+                    "{688940B3-5CA9-4162-8DEE-2993FA9D8CBC}:_E614CE3862334E0ABA4ADD10BE7B70A2"
                     {
                     "Sequence" = "3:100"
                     "DisplayName" = "8:진행률"
@@ -443,7 +537,7 @@
                             "ContextData" = "8:1;True=1;False=0"
                             "Attributes" = "3:0"
                             "Setting" = "3:0"
-                            "Value" = "3:1"
+                            "Value" = "3:0"
                             "DefaultValue" = "3:1"
                             "UsePlugInResources" = "11:TRUE"
                             }
@@ -477,8 +571,8 @@
                             "Type" = "3:3"
                             "ContextData" = "8:"
                             "Attributes" = "3:0"
-                            "Setting" = "3:1"
-                            "Value" = "8:#1202"
+                            "Setting" = "3:2"
+                            "Value" = "8:Use of this program is at your own risk, and the developers of this program shall not be liable for any liability, including civil or criminal liability. By downloading this program, all users are deemed to agree to the above terms without any objection."
                             "DefaultValue" = "8:#1202"
                             "UsePlugInResources" = "11:TRUE"
                             }
@@ -534,10 +628,10 @@
                             "Type" = "3:15"
                             "ContextData" = "8:"
                             "Attributes" = "3:0"
-                            "Setting" = "3:1"
-                            "Value" = "8:#1258"
+                            "Setting" = "3:2"
+                            "Value" = "8:Setup has finished and successfully registered to the Windows service"
                             "DefaultValue" = "8:#1258"
-                            "UsePlugInResources" = "11:TRUE"
+                            "UsePlugInResources" = "11:FALSE"
                             }
                         }
                     }
@@ -650,9 +744,9 @@
         }
         "ProjectOutput"
         {
-            "{5259A561-127C-4D43-A0A1-72F10C7B3BF8}:_A88C36910A764EC7B58193D9F7EBF809"
+            "{5259A561-127C-4D43-A0A1-72F10C7B3BF8}:_34811235DBD44B098E2CE49498C0A551"
             {
-            "SourcePath" = "8:..\\obj\\x64\\Release\\net472\\SteamVRKeyboardFix.exe"
+            "SourcePath" = "8:..\\obj\\x64\\Debug\\net472\\SteamVRKeyboardFix.exe"
             "TargetName" = "8:"
             "Tag" = "8:"
             "Folder" = "8:_8D714FDB2DE7425DAA659390CB85CFB4"
