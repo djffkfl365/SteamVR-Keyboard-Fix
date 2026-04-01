@@ -1,0 +1,8 @@
+{
+  "profiles": {
+    "SteamVRKeyboardFix": {
+      "commandName": "Project",
+      "commandLineArgs": "--debug"
+    }
+  }
+}

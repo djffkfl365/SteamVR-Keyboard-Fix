@@ -1,7 +1,6 @@
 using System;
 using System.Linq;
 using System.Runtime.InteropServices;
-using System.ServiceProcess;
 
 namespace SteamVRKeyboardFix
 {
@@ -10,6 +9,36 @@ namespace SteamVRKeyboardFix
         private const string DebugFlag = "--debug";
         private const string InstallFlag   = "--install";
         private const string UninstallFlag = "--uninstall";
+
+
+        // Win32 API: Find console window and show/hide it for debug mode
+        [DllImport("kernel32.dll")]
+        static extern IntPtr GetConsoleWindow();
+
+        [DllImport("user32.dll")]
+        static extern bool ShowWindow(IntPtr hWnd, int nCmdShow);
+
+        const int SW_HIDE = 0;
+        const int SW_SHOW = 5;
+
+
+        // Declare Win32 API delegate and P/Invoke for shutdown event handling
+        public delegate bool ConsoleCtrlDelegate(int ctrlType);
+
+        [DllImport("Kernel32")]
+        private static extern bool SetConsoleCtrlHandler(ConsoleCtrlDelegate handler, bool add);
+
+            // Windows control signal constants
+        private const int CTRL_C_EVENT = 0;
+        private const int CTRL_BREAK_EVENT = 1;
+        private const int CTRL_CLOSE_EVENT = 2;
+        private const int CTRL_LOGOFF_EVENT = 5;
+        private const int CTRL_SHUTDOWN_EVENT = 6;
+
+            // 🚨 [CRITICAL] Keep the delegate as a static variable!
+            // If it's a local variable, the Garbage Collector (GC) might collect it,
+            // causing a fatal "Attempted to read or write protected memory" crash during shutdown.
+        private static ConsoleCtrlDelegate _ctrlHandler;
 
         static void Main(string[] args)
         {
@@ -50,32 +79,20 @@ namespace SteamVRKeyboardFix
             // 이벤트 로그 소스가 없으면 생성 (관리자 권한 필요, 설치 시 수행)
             EnsureEventLogSource();
 
-            // If running interactively without --debug, insert --debug to arguments
-            // so the service code always sees the flag when in console mode.
-            bool DebugMode = false;
-            if (args.Contains(DebugFlag, StringComparer.OrdinalIgnoreCase))
+            if (!args.Contains(DebugFlag, StringComparer.OrdinalIgnoreCase))
             {
-                DebugMode = true;
-            }
-            else if (Environment.UserInteractive)
-            {
-                args = args.Append(DebugFlag).ToArray();
-                DebugMode = true;
-            }
-
-            if (DebugMode)
-            {
-                RunDebugRepl(args);
+                ShowWindow(GetConsoleWindow(), SW_HIDE);
             }
             else
             {
-                // Running as a Windows Service (non-interactive, no --debug flag)
-                ServiceBase.Run(new SteamVRKeyboardFixService());
+                ShowWindow(GetConsoleWindow(), SW_SHOW);
             }
+            RunDebugRepl(args);
         }
 
         // ── Debug REPL ────────────────────────────────────────────────────────
 
+        private static SteamVRKeyboardFixService? _serviceInstance;
         /// <summary>
         /// Interactive command-line REPL for testing without SteamVR.
         /// The service WMI watcher is also started so real events are captured.
@@ -95,12 +112,17 @@ namespace SteamVRKeyboardFix
         /// </summary>
         private static void RunDebugRepl(string[] args)
         {
+            // Register the exit event handler
+            _ctrlHandler = new ConsoleCtrlDelegate(CtrlHandlerCallback);
+            SetConsoleCtrlHandler(_ctrlHandler, true);
+
             Console.WriteLine("=== SteamVRKeyboardFix [DEBUG MODE] ===");
             Console.WriteLine($"Version: {System.Reflection.Assembly.GetExecutingAssembly().GetName().Version}");
 
             Console.WriteLine();
 
             using var svc = new SteamVRKeyboardFixService();
+            _serviceInstance = svc;
             svc.TestStart(args);
             Console.WriteLine("Type 'help' for commands.");
 
@@ -225,6 +247,28 @@ namespace SteamVRKeyboardFix
                     System.Diagnostics.EventLog.CreateEventSource(source, "Application");
             }
             catch { /* requires admin rights; handled by installer */ }
+        }
+
+        private static bool CtrlHandlerCallback(int ctrlType)
+        {
+            switch (ctrlType)
+            {
+                case CTRL_C_EVENT:
+                case CTRL_CLOSE_EVENT:
+                case CTRL_LOGOFF_EVENT:
+                case CTRL_SHUTDOWN_EVENT: // System shutdown signal!
+
+                    // e.g., Unsubscribe from WMI events, close open FileStreams, etc.
+                    Console.WriteLine($"\n[INFO] Received Windows exit signal ({ctrlType})! Cleaning up resources gracefully...");
+
+                    _serviceInstance?.TestStop();
+
+                    // Tell Windows: "I've handled the cleanup, proceed with termination!"
+                    return true;
+
+                default:
+                    return false;
+            }
         }
     }
 }
