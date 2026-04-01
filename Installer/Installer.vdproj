@@ -97,20 +97,6 @@
     {
         "CustomAction"
         {
-            "{4AA51A2D-7D85-4A59-BA75-B0809FC8B380}:_1038A92ABEC24295AB5EE3DCB743D4D2"
-            {
-            "Name" = "8:기본 출력 from SteamVRKeyboardFix (Active)"
-            "Condition" = "8:"
-            "Object" = "8:_34811235DBD44B098E2CE49498C0A551"
-            "FileType" = "3:2"
-            "InstallAction" = "3:2"
-            "Arguments" = "8:--install"
-            "EntryPoint" = "8:"
-            "Sequence" = "3:1"
-            "Identifier" = "8:_68CCFA9C_19D5_467C_8F01_DCCDEE918059"
-            "InstallerClass" = "11:FALSE"
-            "CustomActionData" = "8:"
-            }
             "{4AA51A2D-7D85-4A59-BA75-B0809FC8B380}:_9279688D3FC54E26AD6F6D1EF039C135"
             {
             "Name" = "8:기본 출력 from SteamVRKeyboardFix (Active)"
@@ -122,6 +108,20 @@
             "EntryPoint" = "8:"
             "Sequence" = "3:1"
             "Identifier" = "8:_929CFAB6_BA1C_4F44_A43F_BD583D59E209"
+            "InstallerClass" = "11:FALSE"
+            "CustomActionData" = "8:"
+            }
+            "{4AA51A2D-7D85-4A59-BA75-B0809FC8B380}:_AD44DFBD26504546A8CEACF857BF0F2D"
+            {
+            "Name" = "8:기본 출력 from SteamVRKeyboardFix (Active)"
+            "Condition" = "8:"
+            "Object" = "8:_34811235DBD44B098E2CE49498C0A551"
+            "FileType" = "3:2"
+            "InstallAction" = "3:2"
+            "Arguments" = "8:--install"
+            "EntryPoint" = "8:"
+            "Sequence" = "3:1"
+            "Identifier" = "8:_68CCFA9C_19D5_467C_8F01_DCCDEE918059"
             "InstallerClass" = "11:FALSE"
             "CustomActionData" = "8:"
             }
@@ -225,7 +225,7 @@
         "Name" = "8:Microsoft Visual Studio"
         "ProductName" = "8:SteamVR Keyboard Fix Installer"
         "ProductCode" = "8:{E6A71E87-4067-429C-943B-96BC392324C6}"
-        "PackageCode" = "8:{5705D0F3-25FA-4725-B096-7750A06909D8}"
+        "PackageCode" = "8:{D3C161B1-9F3F-4C0E-A1FE-98EE001C7A18}"
         "UpgradeCode" = "8:{706F11D5-A05D-4721-A662-23A4E47B081A}"
         "AspNetVersion" = "8:2.0.50727.0"
         "RestartWWWService" = "11:FALSE"
@@ -248,7 +248,7 @@
         "UseSystemSearchPath" = "11:TRUE"
         "TargetPlatform" = "3:1"
         "PreBuildEvent" = "8:"
-        "PostBuildEvent" = "8:"
+        "PostBuildEvent" = "8:cscript.exe \"$(ProjectDir)PostInstallerBuild.vbs\" \"$(BuiltOuputPath)\""
         "RunPostBuildEvent" = "3:0"
         }
         "Registry"
