@@ -224,15 +224,15 @@
         {
         "Name" = "8:Microsoft Visual Studio"
         "ProductName" = "8:SteamVR Keyboard Fix Installer"
-        "ProductCode" = "8:{F47B210A-1F88-4064-9A35-11A1D1C03F00}"
-        "PackageCode" = "8:{BD1BB043-BE5E-4164-92C0-528829C6466E}"
+        "ProductCode" = "8:{E6A71E87-4067-429C-943B-96BC392324C6}"
+        "PackageCode" = "8:{5705D0F3-25FA-4725-B096-7750A06909D8}"
         "UpgradeCode" = "8:{706F11D5-A05D-4721-A662-23A4E47B081A}"
         "AspNetVersion" = "8:2.0.50727.0"
         "RestartWWWService" = "11:FALSE"
         "RemovePreviousVersions" = "11:TRUE"
         "DetectNewerInstalledVersion" = "11:TRUE"
         "InstallAllUsers" = "11:FALSE"
-        "ProductVersion" = "8:0.0.1"
+        "ProductVersion" = "8:0.0.2"
         "Manufacturer" = "8:Izuku39"
         "ARPHELPTELEPHONE" = "8:"
         "ARPHELPLINK" = "8:"
@@ -746,7 +746,7 @@
         {
             "{5259A561-127C-4D43-A0A1-72F10C7B3BF8}:_34811235DBD44B098E2CE49498C0A551"
             {
-            "SourcePath" = "8:..\\obj\\x64\\Debug\\net472\\SteamVRKeyboardFix.exe"
+            "SourcePath" = "8:..\\obj\\x64\\Release\\net472\\SteamVRKeyboardFix.exe"
             "TargetName" = "8:"
             "Tag" = "8:"
             "Folder" = "8:_8D714FDB2DE7425DAA659390CB85CFB4"
