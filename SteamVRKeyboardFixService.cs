@@ -54,10 +54,10 @@ namespace SteamVRKeyboardFix
     {
         // ─── Constants ────────────────────────────────────────────────────────
 
-        private const string TargetProcessName = "vrserver.exe";
+        private const string TargetProcessName = "steamtours.exe";
 
         private const string WmiQuery =
-            "SELECT * FROM Win32_ProcessStartTrace WHERE ProcessName = 'vrserver.exe'";
+            "SELECT * FROM Win32_ProcessStartTrace WHERE ProcessName = 'steamtours.exe'";
 
         // Registry paths (relative to HKCU)
         private const string PreloadKeyPath = @"Keyboard Layout\Preload";
@@ -193,11 +193,12 @@ namespace SteamVRKeyboardFix
             uint pid = 0;
             try { pid = (uint)e.NewEvent.Properties["ProcessID"].Value; } catch { /* Ignore PID exfraction failure */ }
 
-            Log($"vrserver.exe detected (PID={pid}). Scheduling cleanup in {RemovalDelay.TotalSeconds}s.",
+            Log($"{TargetProcessName} detected (PID={pid}). Scheduling cleanup in {RemovalDelay.TotalSeconds}s.",
                 EventLogEntryType.Information, 2000);
 
             // Schedule cleanup on a thread-pool thread so we do not block the WMI callback thread.
             _ = Task.Run(() => DelayedCleanupAsync(_cts.Token));
+            Console.Write("> ");
         }
 
         private async Task DelayedCleanupAsync(CancellationToken ct)

@@ -57,6 +57,18 @@ namespace SteamVRKeyboardFix
         private static extern bool ChangeServiceConfig2(
             nint hService, uint dwInfoLevel, ref SERVICE_DESCRIPTION lpInfo);
 
+        [DllImport("advapi32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+        private static extern bool ChangeServiceConfig(
+            nint hService, uint dwServiceType, uint dwStartType,
+            uint dwErrorControl, string? lpBinaryPathName,
+            string? lpLoadOrderGroup, nint lpdwTagId,
+            string? lpDependencies, string? lpServiceStartName,
+            string? lpPassword, string? lpDisplayName
+        );
+
+        [DllImport("advapi32.dll", SetLastError = true)]
+        private static extern bool QueryServiceStatus(nint hService, ref SERVICE_STATUS lpServiceStatus);
+
         [StructLayout(LayoutKind.Sequential)]
         private struct SERVICE_STATUS
         {
@@ -79,6 +91,9 @@ namespace SteamVRKeyboardFix
         private const uint SERVICE_CONTROL_STOP    = 0x01;
         private const uint SERVICE_CONFIG_DESCRIPTION = 0x01;
         private const uint SERVICE_NO_CHANGE       = 0xFFFFFFFF;
+        private const uint SERVICE_STOPPED = 0x00000001;
+
+        // Win32 API for validating credentials
 
         [DllImport("advapi32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
         private static extern bool LogonUser(
@@ -112,10 +127,19 @@ namespace SteamVRKeyboardFix
                 Console.Error.WriteLine("       Right-click the executable and choose 'Run as administrator'.");
                 Console.Error.WriteLine("Press any key to exit");
                 Console.ReadKey();
+                return;
             }
 
             string exePath    = Process.GetCurrentProcess().MainModule!.FileName;
             string account    = DetectCurrentDesktopUser();
+
+            // Check for existing service and update if present, to avoid unnecessary uninstallation and reinstallation
+            if (HandleExistingService(dontRemove: true))
+            {
+                CreateOrUpdateExistingService(exePath, account, null, createMode: false);
+                return;
+            }
+
             string? password = null;
 
             PromptPasswordInstruction();
@@ -146,46 +170,8 @@ namespace SteamVRKeyboardFix
             GrantLogonAsService(account);
 
             // Remove existing service if present
-            RemoveExistingService();
-
-            // Register the service
-            nint scm = OpenSCManager(null, null, SC_MANAGER_ALL_ACCESS);
-            if (scm == (nint) 0)
-                Fail("OpenSCManager", Marshal.GetLastWin32Error());
-
-            try
-            {
-                nint svc = CreateService(
-                    scm, ServiceName, DisplayName,
-                    SERVICE_ALL_ACCESS, SERVICE_WIN32_OWN_PROCESS,
-                    SERVICE_AUTO_START, SERVICE_ERROR_NORMAL,
-                    $"\"{exePath}\"",
-                    null, (nint) 0, null,
-                    account, password);
-
-                if (svc == (nint) 0)
-                    Fail("CreateService", Marshal.GetLastWin32Error());
-
-                try
-                {
-                    var desc = new SERVICE_DESCRIPTION { lpDescription = $"{Description}\nVersion:  {System.Reflection.Assembly.GetExecutingAssembly().GetName().Version}" };
-                    ChangeServiceConfig2(svc, SERVICE_CONFIG_DESCRIPTION, ref desc);
-
-                    SetRecoveryActions(svc);
-
-                    bool started = StartService(svc, 0, null);
-                    if (!started)
-                        Fail("StartService", Marshal.GetLastWin32Error());
-                }
-                finally { CloseServiceHandle(svc); }
-            }
-            finally { CloseServiceHandle(scm); }
-
-            Console.WriteLine($"[OK] Service '{ServiceName}' installed and started successfully.");
-            Console.WriteLine($"     Account : {account}");
-            Console.WriteLine($"     Log     : Event Viewer > Application > {EventLogSource}");
-            Console.WriteLine($"Press any key to continue");
-            Console.ReadKey(); // Prevent console from closing so log can be read during installation process via installer
+            HandleExistingService();
+            CreateOrUpdateExistingService(exePath, account, password, true);
         }
 
         /// <summary>
@@ -201,7 +187,7 @@ namespace SteamVRKeyboardFix
                 Console.ReadKey();
             }
 
-            RemoveExistingService();
+            HandleExistingService();
 
             if (EventLog.SourceExists(EventLogSource))
             {
@@ -216,7 +202,127 @@ namespace SteamVRKeyboardFix
 
         // ─── Helpers ──────────────────────────────────────────────────────────
 
-        private static void RemoveExistingService()
+        /// <summary>
+        /// Check if service exists. Can remove existing service if present.
+        /// </summary>
+        /// <param name="dontRemove"> If dontRemove is true, just checks for existence without removing.</param>
+        /// <returns>true when service exists</returns>
+        private static bool HandleExistingService(bool dontRemove = false)
+        {
+            nint scm = OpenSCManager(null, null, SC_MANAGER_ALL_ACCESS);
+            if (scm == (nint) 0) return false;
+            try
+            {
+                nint svc = OpenService(scm, ServiceName, SERVICE_ALL_ACCESS);
+                if (svc == (nint) 0) return false;
+                try
+                {
+                    if (dontRemove) return true;
+
+                    var status = new SERVICE_STATUS();
+                    ControlService(svc, SERVICE_CONTROL_STOP, ref status); // stop (ignore failure)
+                    System.Threading.Thread.Sleep(1500);
+                    DeleteService(svc);
+                    Console.WriteLine($"[INFO] Existing service '{ServiceName}' removed.");
+                    return true;
+                }
+                finally { CloseServiceHandle(svc); }
+            }
+            finally { CloseServiceHandle(scm); }
+        }
+
+        /// <summary>
+        /// Creates a new Windows service or updates an existing one with the specified configuration and starts the service.
+        /// </summary>
+        /// <remarks>If the service does not exist and createMode is true, the method registers and starts
+        /// a new service. If the service exists and createMode is false, the method updates the executable path and
+        /// description, then restarts the service. The method writes status messages to the console upon completion.
+        /// The caller must ensure that the executing process has sufficient privileges to create or modify Windows
+        /// services.</remarks>
+        /// <param name="exePath">The full file path to the service executable. This path is used as the service's binary location.</param>
+        /// <param name="account">The name of the user account under which the service will run. This can be a system account or a specific
+        /// user.</param>
+        /// <param name="password">The password for the specified account. This parameter is required if the account is not a built-in system
+        /// account; otherwise, it can be null.</param>
+        /// <param name="createMode">true to create a new service; false to update an existing service. When false, the method updates the
+        /// service's executable path and description.</param>
+        private static void CreateOrUpdateExistingService(string exePath, string account, string? password, bool createMode = true)
+        {
+            // Register the service
+            nint scm = OpenSCManager(null, null, SC_MANAGER_ALL_ACCESS);
+            if (scm == (nint)0)
+                Fail("OpenSCManager", Marshal.GetLastWin32Error());
+
+            try
+            {
+                nint svc = 0;
+
+                if (createMode)
+                {
+                    svc = CreateService(
+                        scm, ServiceName, DisplayName,
+                        SERVICE_ALL_ACCESS, SERVICE_WIN32_OWN_PROCESS,
+                        SERVICE_AUTO_START, SERVICE_ERROR_NORMAL,
+                        $"\"{exePath}\"",
+                        null, (nint)0, null,
+                        account, password);
+                } 
+                else
+                {
+                    Console.WriteLine();
+                    Console.WriteLine("============================================================");
+                    Console.WriteLine(" [SteamVR Keyboard Fix - Update]");
+                    Console.WriteLine("============================================================");
+                    Console.WriteLine($"[INFO] Service '{ServiceName}' is already registered.");
+                    Console.WriteLine("[INFO] Updating configuration to match the new version...");
+
+                    svc = OpenService(scm, ServiceName, SERVICE_ALL_ACCESS);
+                }
+
+                if (svc == (nint) 0)
+                    Fail($"{(createMode ? "CreateService" : "OpenService")}", Marshal.GetLastWin32Error());
+
+                try
+                {
+                    if (!createMode)
+                    {
+                        StopExistingService();
+                        // Exe file path update (for possible installation path change)
+                        // SERVICE_NO_CHANGE (0xFFFFFFFF) will keep existing settings (account/password etc) unchanged.
+                        ChangeServiceConfig(svc, SERVICE_NO_CHANGE, SERVICE_NO_CHANGE, SERVICE_NO_CHANGE,
+                            $"\"{exePath}\"", null, (nint)0, null, null, null, null);
+                    }
+
+                    //Update description
+                    var desc = new SERVICE_DESCRIPTION { lpDescription = $"{Description} Version:  {System.Reflection.Assembly.GetExecutingAssembly().GetName().Version}" };
+                    ChangeServiceConfig2(svc, SERVICE_CONFIG_DESCRIPTION, ref desc);
+
+                    if(createMode)
+                        SetRecoveryActions(svc);
+
+                    bool started = StartService(svc, 0, null);
+                    if (!started)
+                        Fail("StartService", Marshal.GetLastWin32Error());
+                }
+                finally { CloseServiceHandle(svc); }
+            }
+            finally { CloseServiceHandle(scm); }
+
+            if (createMode)
+            {
+                Console.WriteLine($"[OK] Service '{ServiceName}' installed and started successfully.");
+                Console.WriteLine($"     Account : {account}");
+                Console.WriteLine($"     Log     : Event Viewer > Application > {EventLogSource}");
+            }
+            else
+            {
+                Console.WriteLine($"[OK] Service '{ServiceName}' updated successfully.");
+            }
+            Console.WriteLine($"Press any key to continue");
+            Console.ReadKey(); // Prevent console from closing so log can be read during installation process via installer
+        }
+
+        private static void StopExistingService()
         {
             nint scm = OpenSCManager(null, null, SC_MANAGER_ALL_ACCESS);
             if (scm == (nint) 0) return;
@@ -227,10 +333,15 @@ namespace SteamVRKeyboardFix
                 try
                 {
                     var status = new SERVICE_STATUS();
-                    ControlService(svc, SERVICE_CONTROL_STOP, ref status); // stop (ignore failure)
-                    System.Threading.Thread.Sleep(1500);
-                    DeleteService(svc);
-                    Console.WriteLine($"[INFO] Existing service '{ServiceName}' removed.");
+                    ControlService(svc, SERVICE_CONTROL_STOP, ref status);
+                    // 프로세스가 완전히 내려올 때까지 대기 (최대 10초)
+                    for (int i = 0; i < 20; i++)
+                    {
+                        System.Threading.Thread.Sleep(500);
+                        QueryServiceStatus(svc, ref status);
+                        if (status.dwCurrentState == SERVICE_STOPPED) break;
+                    }
+                    Console.WriteLine($"[OK] Service '{ServiceName}' stopped successfully.");
                 }
                 finally { CloseServiceHandle(svc); }
             }
